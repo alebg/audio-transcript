@@ -38,11 +38,17 @@ Diarization and transcript results are cached in `.cache/` so re-runs on the sam
 
 ### Build locally
 
+Requires `HF_TOKEN` in `.env` (the diarization model is gated):
+
 ```bash
-docker build -t ghcr.io/alebg/audio-transcript:latest .
+docker build --secret "id=hf_token,env=HF_TOKEN" -t ghcr.io/alebg/audio-transcript:latest .
 ```
 
-The image is pushed automatically by the GitHub Actions workflow (`.github/workflows/release.yml`) on every published release, tagged with the release version and `:latest`. Set the `HF_TOKEN` secret in **Settings → Secrets and variables → Actions** before triggering a release.
+`run.sh` will prompt and run this automatically if the image is not available remotely or locally.
+
+### CI releases
+
+The GitHub Actions workflow (`.github/workflows/release.yml`) builds and pushes the image automatically on every published release, tagged with the release version and `:latest`. Set `HF_TOKEN` in **Settings → Secrets and variables → Actions** before the first release.
 
 On first push: **GitHub → Packages → audio-transcript → Package settings → Visibility → Private**.
 
