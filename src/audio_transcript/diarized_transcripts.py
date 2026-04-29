@@ -1,5 +1,7 @@
+import hashlib
 import json
 import os
+import shutil
 from typing import Literal
 
 import whisper
@@ -8,6 +10,16 @@ from whisper import Whisper
 from .models import DiarizedSegment, Err, Ok, SpeechSegmentWithAudio, SpeechSegmentWithTranscript
 
 WhisperModelName = Literal["tiny", "base", "small", "medium", "large"]
+
+_TRANSCRIPT_CACHE_DIR = ".cache/transcripts"
+
+
+def _hash_segments(segments: list[SpeechSegmentWithAudio], model_name: str) -> str:
+    h = hashlib.sha256()
+    for s in segments:
+        h.update(f"{s.start_time:.3f}:{s.end_time:.3f}:{s.speaker_id}".encode())
+    h.update(model_name.encode())
+    return h.hexdigest()
 
 
 def load_whisper_model(model_name: WhisperModelName = "base") -> Ok[Whisper] | Err:
@@ -45,11 +57,10 @@ def transcribe_splitted_audio(
 
 def diarized_transcripts_to_json(
     speech_segments: list[SpeechSegmentWithTranscript],
-    output_folder: str = "diarized_transcripts",
+    output_folder: str = "data",
 ) -> Ok[str] | Err:
     try:
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)
+        os.makedirs(output_folder, exist_ok=True)
 
         basename = os.path.splitext(os.path.basename(speech_segments[0].segment_audio_file))[0]
         basename = basename.replace("_part_0", "")
@@ -75,11 +86,29 @@ def diarized_transcripts_to_json(
         return Err(message=f"Failed to write diarized transcripts: {e}")
 
 
+def _output_path_from_segments(
+    segments: list[SpeechSegmentWithAudio],
+    output_folder: str = "data",
+) -> str:
+    basename = os.path.splitext(os.path.basename(segments[0].segment_audio_file))[0]
+    return f"{output_folder}/{basename.replace('_part_0', '')}.json"
+
+
 def main(
     speech_segments: list[SpeechSegmentWithAudio],
     model_name: WhisperModelName = "base",
     debug: bool = False,
 ) -> Ok[str] | Err:
+    segment_hash = _hash_segments(speech_segments, model_name)
+    cached = os.path.join(_TRANSCRIPT_CACHE_DIR, f"{segment_hash}.json")
+
+    if os.path.exists(cached):
+        output_file = _output_path_from_segments(speech_segments)
+        os.makedirs("data", exist_ok=True)
+        shutil.copy(cached, output_file)
+        print(f"Transcript cache hit — skipping Whisper ({cached})")
+        return Ok(value=output_file)
+
     model_result = load_whisper_model(model_name=model_name)
     if isinstance(model_result, Err):
         return model_result
@@ -91,6 +120,11 @@ def main(
     json_result = diarized_transcripts_to_json(speech_segments=tsa.value)
     if isinstance(json_result, Err):
         return json_result
+
+    os.makedirs(_TRANSCRIPT_CACHE_DIR, exist_ok=True)
+    shutil.copy(json_result.value, cached)
+    if debug:
+        print(f"Transcript result cached to {cached}")
 
     if debug:
         print(f"\ndiarized_transcripts.py:\n{json_result}\n")

@@ -39,7 +39,7 @@ def _validate_inputs(audio_filepath: str) -> Ok[None] | Err:
     if isinstance(token_check, Err):
         return token_check
 
-    for directory in ("rttm_files", "diarized_transcripts"):
+    for directory in ("rttm_files", "data"):
         try:
             os.makedirs(directory, exist_ok=True)
         except Exception as e:
