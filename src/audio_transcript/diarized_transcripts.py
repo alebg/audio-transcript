@@ -7,18 +7,19 @@ from typing import Literal
 import whisper
 from whisper import Whisper
 
-from .models import DiarizedSegment, Err, Ok, SpeechSegmentWithAudio, SpeechSegmentWithTranscript
+from .models import DiarizedSegment, Err, Ok, SpeechSegmentWithAudio, SpeechSegmentWithTranscript, WhisperLanguage
 
 WhisperModelName = Literal["tiny", "base", "small", "medium", "large"]
 
 _TRANSCRIPT_CACHE_DIR = ".cache/transcripts"
 
 
-def _hash_segments(segments: list[SpeechSegmentWithAudio], model_name: str) -> str:
+def _hash_segments(segments: list[SpeechSegmentWithAudio], model_name: str, language: WhisperLanguage | None) -> str:
     h = hashlib.sha256()
     for s in segments:
         h.update(f"{s.start_time:.3f}:{s.end_time:.3f}:{s.speaker_id}".encode())
     h.update(model_name.encode())
+    h.update((language or "auto").encode())
     return h.hexdigest()
 
 
@@ -30,9 +31,9 @@ def load_whisper_model(model_name: WhisperModelName = "base") -> Ok[Whisper] | E
         return Err(message=f"Failed to load {model_name} model: {e}")
 
 
-def transcribe_audio(audio_filepath: str, model: Whisper) -> Ok[str] | Err:
+def transcribe_audio(audio_filepath: str, model: Whisper, language: WhisperLanguage | None) -> Ok[str] | Err:
     try:
-        result = model.transcribe(audio=audio_filepath, language="fr")
+        result = model.transcribe(audio=audio_filepath, language=language)
         text: str = result["text"]
         return Ok(value=text.strip())
     except Exception as e:
@@ -42,11 +43,12 @@ def transcribe_audio(audio_filepath: str, model: Whisper) -> Ok[str] | Err:
 def transcribe_splitted_audio(
     speech_segments: list[SpeechSegmentWithAudio],
     model: Whisper,
+    language: WhisperLanguage | None,
 ) -> Ok[list[SpeechSegmentWithTranscript]] | Err:
     try:
         result: list[SpeechSegmentWithTranscript] = []
         for segment in speech_segments:
-            tr = transcribe_audio(audio_filepath=segment.segment_audio_file, model=model)
+            tr = transcribe_audio(audio_filepath=segment.segment_audio_file, model=model, language=language)
             if isinstance(tr, Err):
                 return tr
             result.append(SpeechSegmentWithTranscript(**segment.model_dump(), transcript=tr.value))
@@ -97,9 +99,10 @@ def _output_path_from_segments(
 def main(
     speech_segments: list[SpeechSegmentWithAudio],
     model_name: WhisperModelName = "base",
+    language: WhisperLanguage | None = None,
     debug: bool = False,
 ) -> Ok[str] | Err:
-    segment_hash = _hash_segments(speech_segments, model_name)
+    segment_hash = _hash_segments(speech_segments, model_name, language)
     cached = os.path.join(_TRANSCRIPT_CACHE_DIR, f"{segment_hash}.json")
 
     if os.path.exists(cached):
@@ -113,7 +116,7 @@ def main(
     if isinstance(model_result, Err):
         return model_result
 
-    tsa = transcribe_splitted_audio(speech_segments=speech_segments, model=model_result.value)
+    tsa = transcribe_splitted_audio(speech_segments=speech_segments, model=model_result.value, language=language)
     if isinstance(tsa, Err):
         return tsa
 
