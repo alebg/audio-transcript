@@ -1,0 +1,9 @@
+services:
+  audio-transcript:
+    image: ghcr.io/alebg/audio-transcript:latest
+    user: "${UID}:${GID}"
+    environment:
+      HOME: /app
+    volumes:
+      - ./data:/app/data
+      - ./.cache:/app/.cache

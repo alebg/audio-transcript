@@ -35,11 +35,11 @@ def _validate_inputs(audio_filepath: str) -> Ok[None] | Err:
     if shutil.which("ffmpeg") is None:
         return Err(message="ffmpeg not found — install it with: sudo apt-get install ffmpeg")
 
-    token_check = speaker_diarization.load_hf_access_token()
-    if isinstance(token_check, Err):
-        return token_check
+    model_path_check = speaker_diarization.load_model_path()
+    if isinstance(model_path_check, Err):
+        return model_path_check
 
-    for directory in ("rttm_files", "data"):
+    for directory in ("data",):
         try:
             os.makedirs(directory, exist_ok=True)
         except Exception as e:
@@ -110,7 +110,7 @@ def cli() -> None:
         prog="audio-transcript",
         description="YouTube video or audio file → speaker-diarized transcript",
     )
-    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("-d", "--debug", action="store_true")
 
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -118,10 +118,10 @@ def cli() -> None:
     url_parser.add_argument("url", help="YouTube video URL")
     url_parser.add_argument("title", help="Output file base name (no extension)")
     url_parser.add_argument(
-        "--model", default="base", dest="whisper_model", choices=["tiny", "base", "small", "medium", "large"]
+        "-m", "--model", default="base", dest="whisper_model", choices=["tiny", "base", "small", "medium", "large"]
     )
     url_parser.add_argument(
-        "--language",
+        "-l", "--language",
         default=None,
         choices=sorted(WHISPER_LANGUAGES),
         metavar="LANG",
@@ -131,10 +131,10 @@ def cli() -> None:
     audio_parser = sub.add_parser("from-audio", help="Transcribe an existing audio file")
     audio_parser.add_argument("audio_path", help="Path to the audio file")
     audio_parser.add_argument(
-        "--model", default="base", dest="whisper_model", choices=["tiny", "base", "small", "medium", "large"]
+        "-m", "--model", default="base", dest="whisper_model", choices=["tiny", "base", "small", "medium", "large"]
     )
     audio_parser.add_argument(
-        "--language",
+        "-l", "--language",
         default=None,
         choices=sorted(WHISPER_LANGUAGES),
         metavar="LANG",

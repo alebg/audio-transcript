@@ -1,10 +1,13 @@
 """
-Speaker diarization via pyannote/speaker-diarization-3.1.
+Speaker diarization via a locally-cloned pyannote model.
 
-Requires a Hugging Face access token with access granted at:
-https://huggingface.co/pyannote/speaker-diarization-3.1
+The model must be cloned before running (once):
 
-Set HUGGINGFACE_ACCESS_TOKEN in a .env file (see .env.template).
+    git lfs install
+    git clone https://huggingface.co/pyannote/speaker-diarization-community-1 /path/to/model
+
+Then set DIARIZATION_MODEL_PATH in your .env file (see .env.template).
+In the Docker image the model is baked in at /model and the env var is pre-set.
 """
 
 import hashlib
@@ -36,32 +39,26 @@ def _cached_rttm(file_hash: str) -> str:
     return os.path.join(_CACHE_DIR, f"{file_hash}.rttm")
 
 
-def load_hf_access_token() -> Ok[str] | Err:
-    try:
-        load_dotenv()
-        token = os.getenv("HUGGINGFACE_ACCESS_TOKEN")
-    except Exception as e:
-        return Err(message=f"Failed to load environment variables: {e}")
-
-    if token is None:
-        return Err(message="HUGGINGFACE_ACCESS_TOKEN not found. Add it to your .env file")
-
-    return Ok(value=token)
+def load_model_path() -> Ok[str] | Err:
+    load_dotenv()
+    model_path = os.getenv("DIARIZATION_MODEL_PATH")
+    if not model_path:
+        return Err(message="DIARIZATION_MODEL_PATH is not set. Add it to your .env file.")
+    if not os.path.isdir(model_path):
+        return Err(message=f"DIARIZATION_MODEL_PATH '{model_path}' does not exist or is not a directory.")
+    return Ok(value=model_path)
 
 
 def speaker_diarization(
     audio_file_path: str,
-    hugging_face_access_token: str,
+    model_path: str,
     preload_audio_in_memory: bool = False,
-    output_folder: str = "rttm_files",
+    output_folder: str = "data/rttm_files",
 ) -> Ok[str] | Err:
     try:
-        pipeline = Pipeline.from_pretrained(
-            "pyannote/speaker-diarization-3.1",
-            token=hugging_face_access_token,
-        )
+        pipeline = Pipeline.from_pretrained(model_path)
         if not isinstance(pipeline, Pipeline):
-            raise RuntimeError("Pipeline.from_pretrained returned None — check your HuggingFace token and model access")
+            raise RuntimeError(f"Pipeline.from_pretrained('{model_path}') returned None")
 
         with ProgressHook() as hook:
             if preload_audio_in_memory:
@@ -86,9 +83,9 @@ def speaker_diarization(
 
 
 def main(audio_filepath: str, debug: bool = False) -> Ok[str] | Err:
-    token_result = load_hf_access_token()
-    if isinstance(token_result, Err):
-        return token_result
+    model_path_result = load_model_path()
+    if isinstance(model_path_result, Err):
+        return model_path_result
 
     file_hash = _hash_audio(audio_filepath)
     cached = _cached_rttm(file_hash)
@@ -103,7 +100,7 @@ def main(audio_filepath: str, debug: bool = False) -> Ok[str] | Err:
 
     result = speaker_diarization(
         audio_file_path=silence_result.value,
-        hugging_face_access_token=token_result.value,
+        model_path=model_path_result.value,
         preload_audio_in_memory=True,
     )
 

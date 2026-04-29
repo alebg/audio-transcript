@@ -222,9 +222,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Pipeline runtime outputs
-audio_files/
-rttm_files/
-diarized_transcripts/
+data/
 *.bak
 *.bak-*
 .cache/

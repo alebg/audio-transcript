@@ -1,0 +1,10 @@
+.git/
+.venv/
+.cache/
+.mypy_cache/
+*.egg-info/
+__pycache__/
+data/
+.env
+*.bak
+*.bak-*

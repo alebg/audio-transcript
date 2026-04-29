@@ -14,7 +14,7 @@ from .models import Err, Ok
 from .utils import rename_file
 
 
-def download_audio(url: str, file_title: str, output_folder: str = "audio_files") -> Ok[str] | Err:
+def download_audio(url: str, file_title: str, output_folder: str = "data/audio_files") -> Ok[str] | Err:
     filepath = f"{output_folder}/{file_title}"
 
     try:
