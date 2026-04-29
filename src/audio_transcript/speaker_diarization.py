@@ -10,12 +10,13 @@ Set HUGGINGFACE_ACCESS_TOKEN in a .env file (see .env.template).
 import hashlib
 import os
 import shutil
-from typing import Any, Dict
+
 from pyannote.audio import Pipeline
 from pyannote.audio.pipelines.utils.hook import ProgressHook
 import torchaudio
 from dotenv import load_dotenv
 
+from .models import Err, Ok
 from .utils import append_silence_segment
 
 _CACHE_DIR = ".cache/diarization"
@@ -35,20 +36,17 @@ def _cached_rttm(file_hash: str) -> str:
     return os.path.join(_CACHE_DIR, f"{file_hash}.rttm")
 
 
-def load_hf_access_token() -> Dict[str, Any]:
+def load_hf_access_token() -> Ok[str] | Err:
     try:
         load_dotenv()
         token = os.getenv("HUGGINGFACE_ACCESS_TOKEN")
     except Exception as e:
-        return {"status": False, "message": f"Failed to load environment variables: {e}"}
+        return Err(message=f"Failed to load environment variables: {e}")
 
     if token is None:
-        return {
-            "status": False,
-            "message": "HUGGINGFACE_ACCESS_TOKEN not found. Add it to your .env file",
-        }
+        return Err(message="HUGGINGFACE_ACCESS_TOKEN not found. Add it to your .env file")
 
-    return {"status": True, "message": "Loaded HUGGINGFACE_ACCESS_TOKEN", "token": token}
+    return Ok(value=token)
 
 
 def speaker_diarization(
@@ -56,12 +54,14 @@ def speaker_diarization(
     hugging_face_access_token: str,
     preload_audio_in_memory: bool = False,
     output_folder: str = "rttm_files",
-) -> Dict[str, Any]:
+) -> Ok[str] | Err:
     try:
         pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
             token=hugging_face_access_token,
         )
+        if not isinstance(pipeline, Pipeline):
+            raise RuntimeError("Pipeline.from_pretrained returned None — check your HuggingFace token and model access")
 
         with ProgressHook() as hook:
             if preload_audio_in_memory:
@@ -71,56 +71,49 @@ def speaker_diarization(
                 diarization = pipeline(audio_file_path, hook=hook)
 
         basename = os.path.splitext(os.path.basename(audio_file_path))[0]
-
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)
-
+        os.makedirs(output_folder, exist_ok=True)
         output_file = f"{output_folder}/{basename}.rttm"
-        # pyannote >=3.2 wraps the result in a DiarizeOutput namedtuple;
-        # older versions return the Annotation directly
-        annotation = diarization.diarization if hasattr(diarization, 'diarization') else diarization
+
+        # pyannote >=3.2 wraps the result in DiarizeOutput; older versions return Annotation directly
+        annotation = diarization.speaker_diarization if hasattr(diarization, 'speaker_diarization') else diarization
         with open(output_file, "w") as rttm:
             annotation.write_rttm(rttm)
 
-        return {
-            "status": True,
-            "message": f"Successfully ran speaker diarization on {audio_file_path}",
-            "output_file": output_file,
-        }
+        return Ok(value=output_file)
 
     except Exception as e:
-        return {"status": False, "message": f"Failed to run speaker diarization on {audio_file_path}: {e}"}
+        return Err(message=f"Failed to run speaker diarization on {audio_file_path}: {e}")
 
 
-def main(audio_filepath: str, debug: bool = False) -> Dict[str, Any]:
-    token_response = load_hf_access_token()
-    if not token_response["status"]:
-        return token_response
+def main(audio_filepath: str, debug: bool = False) -> Ok[str] | Err:
+    token_result = load_hf_access_token()
+    if isinstance(token_result, Err):
+        return token_result
 
     file_hash = _hash_audio(audio_filepath)
     cached = _cached_rttm(file_hash)
 
     if os.path.exists(cached):
         print(f"Diarization cache hit — skipping embeddings ({cached})")
-        return {"status": True, "message": "Loaded diarization from cache", "output_file": cached}
+        return Ok(value=cached)
 
-    silence_response = append_silence_segment(filepath=audio_filepath)
-    if not silence_response["status"]:
-        return silence_response
+    silence_result = append_silence_segment(filepath=audio_filepath)
+    if isinstance(silence_result, Err):
+        return silence_result
 
-    response = speaker_diarization(
-        audio_file_path=silence_response["output_file"],
-        hugging_face_access_token=token_response["token"],
+    result = speaker_diarization(
+        audio_file_path=silence_result.value,
+        hugging_face_access_token=token_result.value,
         preload_audio_in_memory=True,
     )
 
-    if response["status"]:
+    if isinstance(result, Ok):
         os.makedirs(_CACHE_DIR, exist_ok=True)
-        shutil.copy(response["output_file"], cached)
+        shutil.copy(result.value, cached)
         if debug:
             print(f"Diarization result cached to {cached}")
 
     if debug:
-        print(f"\nspeaker_diarization.py:\n{response}\n")
+        print(f"\nspeaker_diarization.py:\n{result}\n")
 
-    return response
+    return result

@@ -1,19 +1,16 @@
 import json
-from typing import Any, Dict, List, Union
 
-JSONAtom = Dict[str, Any]
-TJSON = Union[JSONAtom, List[JSONAtom]]
+from .models import DiarizedSegment
 
 
-def read_json(filepath: str) -> TJSON:
+def read_json(filepath: str) -> list[DiarizedSegment]:
     with open(filepath, 'r', encoding='utf-8') as f:
-        return json.load(f)
+        data = json.load(f)
+    return [DiarizedSegment.model_validate(item) for item in data]
 
 
-def present_transcript(data: TJSON) -> str:
-    if isinstance(data, list):
-        return "\n".join(f"{d['speaker_id']}: {d['transcription']}" for d in data)
-    return "\n".join(f"{k}: {v}" for k, v in data.items())
+def present_transcript(data: list[DiarizedSegment]) -> str:
+    return "\n".join(f"{d.speaker_id}: {d.transcription}" for d in data)
 
 
 def main() -> None:
@@ -23,5 +20,4 @@ def main() -> None:
     parser.add_argument("-i", "--input", required=True, help="Path to the diarized transcript JSON file")
     args = parser.parse_args()
 
-    data = read_json(args.input)
-    print(present_transcript(data))
+    print(present_transcript(read_json(args.input)))

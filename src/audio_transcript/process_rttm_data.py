@@ -1,52 +1,52 @@
-from typing import Any, Dict, List
 import pandas as pd
 
-from .utils import rttm_columns
+from .models import Err, Ok, SpeechSegment
 
 
-def process_rttm(rttm_filepath: str) -> Dict[str, Any]:
-    """Parses an RTTM file into a list of speech_segment dicts."""
+def process_rttm(rttm_filepath: str) -> Ok[list[SpeechSegment]] | Err:
     try:
+        from .utils import rttm_columns
+
         df = pd.read_csv(rttm_filepath, sep=" ", header=None, names=rttm_columns)
         df = df.fillna("<NA>")
         df["end_time"] = pd.to_numeric(df["start_time"] + df["duration"], errors='coerce').round(3)
-        records: List[Dict[str, Any]] = df[["start_time", "end_time", "duration", "speaker_id"]].to_dict(orient="records")
-        return {"status": True, "message": f"Successfully processed {rttm_filepath}", "data": records}
+        df = df[["start_time", "end_time", "duration", "speaker_id"]]
+
+        records = [
+            SpeechSegment(
+                start_time=float(row["start_time"]),
+                end_time=float(row["end_time"]),
+                duration=float(row["duration"]),
+                speaker_id=str(row["speaker_id"]),
+            )
+            for _, row in df.iterrows()
+        ]
+        return Ok(value=records)
     except Exception as e:
-        return {"status": False, "message": f"Failed to process rttm file: {e}"}
+        return Err(message=f"Failed to process rttm file: {e}")
 
 
 def filter_low_duration_speech_segments(
-    speech_segments: List[Dict[str, Any]],
+    speech_segments: list[SpeechSegment],
     min_duration: float = 0.3,
-) -> Dict[str, Any]:
+) -> Ok[list[SpeechSegment]] | Err:
     try:
-        filtered = [s for s in speech_segments if s['duration'] >= min_duration]
-        return {
-            "status": True,
-            "message": f"Filtered segments shorter than {min_duration}s",
-            "data": filtered,
-        }
+        filtered = [s for s in speech_segments if s.duration >= min_duration]
+        return Ok(value=filtered)
     except Exception as e:
-        return {"status": False, "message": f"Failed to filter speech segments: {e}"}
+        return Err(message=f"Failed to filter speech segments: {e}")
 
 
-def main(rttm_filepath: str, debug: bool = False) -> Dict[str, Any]:
+def main(rttm_filepath: str, debug: bool = False) -> Ok[list[SpeechSegment]] | Err:
     pr = process_rttm(rttm_filepath=rttm_filepath)
-    if not pr["status"]:
+    if isinstance(pr, Err):
         return pr
 
-    fls = filter_low_duration_speech_segments(speech_segments=pr["data"])
-    if not fls["status"]:
+    fls = filter_low_duration_speech_segments(speech_segments=pr.value)
+    if isinstance(fls, Err):
         return fls
 
-    response: Dict[str, Any] = {
-        "status": True,
-        "message": f"Successfully processed {rttm_filepath} and filtered short segments",
-        "data": fls["data"],
-    }
-
     if debug:
-        print(f"\nprocess_rttm_data.py:\n{response}\n")
+        print(f"\nprocess_rttm_data.py: {len(fls.value)} segments after filtering\n")
 
-    return response
+    return fls

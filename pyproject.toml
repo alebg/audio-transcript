@@ -14,6 +14,7 @@ dependencies = [
     "pyannote.database",
     "pyannote.metrics",
     "pyannote.pipeline",
+    "pydantic",
     "python-dotenv",
     "pydub",
     "torchaudio",
@@ -27,6 +28,7 @@ dev = [
     "pytest",
     "jupyter",
     "nbqa",
+    "pandas-stubs",
 ]
 
 [project.scripts]
