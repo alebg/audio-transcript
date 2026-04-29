@@ -227,3 +227,4 @@ rttm_files/
 diarized_transcripts/
 *.bak
 *.bak-*
+.cache/

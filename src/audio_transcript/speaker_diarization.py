@@ -7,7 +7,9 @@ https://huggingface.co/pyannote/speaker-diarization-3.1
 Set HUGGINGFACE_ACCESS_TOKEN in a .env file (see .env.template).
 """
 
+import hashlib
 import os
+import shutil
 from typing import Any, Dict
 from pyannote.audio import Pipeline
 from pyannote.audio.pipelines.utils.hook import ProgressHook
@@ -15,6 +17,22 @@ import torchaudio
 from dotenv import load_dotenv
 
 from .utils import append_silence_segment
+
+_CACHE_DIR = ".cache/diarization"
+
+
+def _hash_audio(filepath: str) -> str:
+    # If silence was already prepended on a prior run, .bak holds the original content
+    source = f"{filepath}.bak" if os.path.exists(f"{filepath}.bak") else filepath
+    h = hashlib.sha256()
+    with open(source, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _cached_rttm(file_hash: str) -> str:
+    return os.path.join(_CACHE_DIR, f"{file_hash}.rttm")
 
 
 def load_hf_access_token() -> Dict[str, Any]:
@@ -42,7 +60,7 @@ def speaker_diarization(
     try:
         pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
-            use_auth_token=hugging_face_access_token,
+            token=hugging_face_access_token,
         )
 
         with ProgressHook() as hook:
@@ -58,8 +76,11 @@ def speaker_diarization(
             os.makedirs(output_folder)
 
         output_file = f"{output_folder}/{basename}.rttm"
+        # pyannote >=3.2 wraps the result in a DiarizeOutput namedtuple;
+        # older versions return the Annotation directly
+        annotation = diarization.diarization if hasattr(diarization, 'diarization') else diarization
         with open(output_file, "w") as rttm:
-            diarization.write_rttm(rttm)
+            annotation.write_rttm(rttm)
 
         return {
             "status": True,
@@ -76,6 +97,13 @@ def main(audio_filepath: str, debug: bool = False) -> Dict[str, Any]:
     if not token_response["status"]:
         return token_response
 
+    file_hash = _hash_audio(audio_filepath)
+    cached = _cached_rttm(file_hash)
+
+    if os.path.exists(cached):
+        print(f"Diarization cache hit — skipping embeddings ({cached})")
+        return {"status": True, "message": "Loaded diarization from cache", "output_file": cached}
+
     silence_response = append_silence_segment(filepath=audio_filepath)
     if not silence_response["status"]:
         return silence_response
@@ -85,6 +113,12 @@ def main(audio_filepath: str, debug: bool = False) -> Dict[str, Any]:
         hugging_face_access_token=token_response["token"],
         preload_audio_in_memory=True,
     )
+
+    if response["status"]:
+        os.makedirs(_CACHE_DIR, exist_ok=True)
+        shutil.copy(response["output_file"], cached)
+        if debug:
+            print(f"Diarization result cached to {cached}")
 
     if debug:
         print(f"\nspeaker_diarization.py:\n{response}\n")

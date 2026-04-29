@@ -13,19 +13,46 @@ Examples
 """
 
 import argparse
+import os
 import pprint
+import shutil
 import sys
 from typing import Any, Dict
 
-from . import diarized_transcripts, process_rttm_data, speaker_diarization, split_audio, yt_audio_downloader
+from . import diarized_transcripts, process_rttm_data, speaker_diarization, split_audio
 from .diarized_transcripts import WhisperModelName
+from .utils import FORMAT_MAP
+
+
+def _validate_inputs(audio_filepath: str) -> Dict[str, Any]:
+    """Fast checks that run before any heavy model work."""
+    if not os.path.exists(audio_filepath):
+        return {"status": False, "message": f"Audio file not found: '{audio_filepath}'"}
+
+    ext = os.path.splitext(audio_filepath)[1][1:].lower()
+    if ext not in FORMAT_MAP:
+        return {"status": False, "message": f"Unsupported audio format '.{ext}'. Supported: {sorted(FORMAT_MAP)}"}
+
+    if shutil.which("ffmpeg") is None:
+        return {"status": False, "message": "ffmpeg not found — install it with: sudo apt-get install ffmpeg"}
+
+    token_check = speaker_diarization.load_hf_access_token()
+    if not token_check["status"]:
+        return token_check
+
+    for directory in ("rttm_files", "diarized_transcripts"):
+        try:
+            os.makedirs(directory, exist_ok=True)
+        except Exception as e:
+            return {"status": False, "message": f"Cannot create output directory '{directory}': {e}"}
+
+    return {"status": True, "message": "All pre-flight checks passed"}
 
 
 def _run_from_audio(audio_filepath: str, whisper_model: WhisperModelName, debug: bool) -> Dict[str, Any]:
-    import os
-
-    if not os.path.exists(audio_filepath):
-        return {"status": False, "message": f"Audio file '{audio_filepath}' does not exist"}
+    preflight = _validate_inputs(audio_filepath)
+    if not preflight["status"]:
+        return preflight
 
     diarization = speaker_diarization.main(audio_filepath=audio_filepath, debug=debug)
     if not diarization["status"]:
@@ -55,6 +82,8 @@ def _run_from_audio(audio_filepath: str, whisper_model: WhisperModelName, debug:
 
 
 def _run_from_url(yt_url: str, file_title: str, whisper_model: WhisperModelName, debug: bool) -> Dict[str, Any]:
+    from . import yt_audio_downloader
+
     download = yt_audio_downloader.main(yt_url=yt_url, file_title=file_title, debug=debug)
     if not download["status"]:
         return download
