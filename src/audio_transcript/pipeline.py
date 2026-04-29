@@ -121,7 +121,8 @@ def cli() -> None:
         "-m", "--model", default="base", dest="whisper_model", choices=["tiny", "base", "small", "medium", "large"]
     )
     url_parser.add_argument(
-        "-l", "--language",
+        "-l",
+        "--language",
         default=None,
         choices=sorted(WHISPER_LANGUAGES),
         metavar="LANG",
@@ -134,7 +135,8 @@ def cli() -> None:
         "-m", "--model", default="base", dest="whisper_model", choices=["tiny", "base", "small", "medium", "large"]
     )
     audio_parser.add_argument(
-        "-l", "--language",
+        "-l",
+        "--language",
         default=None,
         choices=sorted(WHISPER_LANGUAGES),
         metavar="LANG",
