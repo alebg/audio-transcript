@@ -49,6 +49,7 @@ mkdir -p data .cache/diarization .cache/transcripts
 docker run --rm \
     --user "$(id -u):$(id -g)" \
     -e HOME=/app \
+    -e PYTHONUNBUFFERED=1 \
     -e MPLCONFIGDIR=/app/.cache/matplotlib \
     -e TORCHINDUCTOR_CACHE_DIR=/app/.cache/torch \
     -v "$(pwd)/data:/app/data" \
