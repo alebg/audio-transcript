@@ -1,8 +1,9 @@
 import argparse
 import logging
 import sys
+from itertools import groupby
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Iterable
 
 from pydantic import TypeAdapter
 
@@ -43,10 +44,23 @@ def _parse_speakers(raw: str) -> dict[str, str]:
     return result
 
 
+def _resolve_name(speaker_id: str, speaker_names: dict[str, str]) -> str:
+    return speaker_names.get(speaker_id, speaker_id)
+
+
 def _format_segment(seg: DiarizedSegment, speaker_names: dict[str, str]) -> str:
     ts = process_timestamps(seg.start_time, seg.end_time)
-    name = speaker_names.get(seg.speaker_id, seg.speaker_id)
-    return f'{name} ({ts}): "{seg.transcription}"'
+    return f'{_resolve_name(seg.speaker_id, speaker_names)} ({ts}): "{seg.transcription}"'
+
+
+def _group_consecutive(segments: Iterable[DiarizedSegment]) -> Generator[tuple[str, str], None, None]:
+    for speaker_id, group in groupby(segments, key=lambda seg: seg.speaker_id):
+        transcription = ' '.join(seg.transcription for seg in group)
+        yield speaker_id, transcription
+
+
+def _format_simple(speaker_id: str, transcription: str, speaker_names: dict[str, str]) -> str:
+    return f'{_resolve_name(speaker_id, speaker_names)}: "{transcription}"'
 
 
 def _write_lines(lines: Generator[str, None, None], output_path: Path) -> None:
@@ -56,7 +70,7 @@ def _write_lines(lines: Generator[str, None, None], output_path: Path) -> None:
             f.write(line + '\n')
 
 
-def _pipeline(json_path: Path, output_path: Path, speaker_names: dict[str, str]) -> None:
+def _pipeline(json_path: Path, output_path: Path, speaker_names: dict[str, str], simple: bool) -> None:
     all_segments = _adapter.validate_json(json_path.read_text())
 
     if speaker_names:
@@ -64,8 +78,14 @@ def _pipeline(json_path: Path, output_path: Path, speaker_names: dict[str, str])
         for sid in sorted(frozenset(speaker_names) - actual_ids):
             logger.warning('Speaker "%s" provided but not found in transcript — ignored', sid)
 
-    segments = (seg for seg in all_segments if seg.transcription)
-    lines = (_format_segment(seg, speaker_names) for seg in segments)
+    non_empty = (seg for seg in all_segments if seg.transcription)
+
+    if simple:
+        groups = _group_consecutive(non_empty)
+        lines: Generator[str, None, None] = (_format_simple(sid, text, speaker_names) for sid, text in groups)
+    else:
+        lines = (_format_segment(seg, speaker_names) for seg in non_empty)
+
     _write_lines(lines, output_path)
     logger.info('Written to %s', output_path)
 
@@ -81,6 +101,11 @@ def cli() -> None:
         default='',
         help='Speaker name map, e.g. "0=John Smith,1=Mary Mueller"',
     )
+    parser.add_argument(
+        '--simple',
+        action='store_true',
+        help='Omit timestamps and merge consecutive segments from the same speaker',
+    )
     args = parser.parse_args()
 
     json_path: Path = args.input
@@ -90,7 +115,7 @@ def cli() -> None:
 
     speaker_names: dict[str, str] = _parse_speakers(args.speakers) if args.speakers else {}
     output_path = Path('data/formatted') / json_path.with_suffix('.txt').name
-    _pipeline(json_path, output_path, speaker_names)
+    _pipeline(json_path, output_path, speaker_names, simple=args.simple)
 
 
 if __name__ == '__main__':
