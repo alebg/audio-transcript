@@ -34,6 +34,7 @@ dev = [
 [project.scripts]
 audio-transcript = "audio_transcript.pipeline:cli"
 present-transcript = "audio_transcript.present_transcript:main"
+format-transcript = "audio_transcript.format_transcript:cli"
 
 [build-system]
 requires = ["setuptools>=68"]
