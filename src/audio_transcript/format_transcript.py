@@ -53,9 +53,15 @@ def _format_segment(seg: DiarizedSegment, speaker_names: dict[str, str]) -> str:
     return f'{_resolve_name(seg.speaker_id, speaker_names)} ({ts}): "{seg.transcription}"'
 
 
+def _ensure_sentence_end(text: str) -> str:
+    if text and text[-1].isalpha():
+        return text + '.'
+    return text
+
+
 def _group_consecutive(segments: Iterable[DiarizedSegment]) -> Generator[tuple[str, str], None, None]:
     for speaker_id, group in groupby(segments, key=lambda seg: seg.speaker_id):
-        transcription = ' '.join(seg.transcription for seg in group)
+        transcription = ' '.join(_ensure_sentence_end(seg.transcription) for seg in group)
         yield speaker_id, transcription
 
 
@@ -67,7 +73,7 @@ def _write_lines(lines: Generator[str, None, None], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open('w') as f:
         for line in lines:
-            f.write(line + '\n')
+            f.write(line + '\n\n')
 
 
 def _pipeline(json_path: Path, output_path: Path, speaker_names: dict[str, str], simple: bool) -> None:

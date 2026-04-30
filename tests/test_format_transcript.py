@@ -3,6 +3,7 @@ import argparse
 import pytest
 
 from audio_transcript.format_transcript import (
+    _ensure_sentence_end,
     _format_segment,
     _format_simple,
     _group_consecutive,
@@ -132,16 +133,34 @@ def test_format_simple_without_name() -> None:
     assert _format_simple('SPEAKER_00', 'Hello world', {}) == 'SPEAKER_00: "Hello world"'
 
 
+# --- _ensure_sentence_end ---
+
+
+@pytest.mark.parametrize(
+    'text, expected',
+    [
+        ('Wechseln', 'Wechseln.'),  # ends with alpha → append dot
+        ('Okay super.', 'Okay super.'),  # ends with dot → unchanged
+        ('Really?', 'Really?'),  # ends with punctuation → unchanged
+        ('Yes!', 'Yes!'),  # ends with punctuation → unchanged
+        ('', ''),  # empty → unchanged
+        ('Gut,', 'Gut,'),  # ends with comma → unchanged
+    ],
+)
+def test_ensure_sentence_end(text: str, expected: str) -> None:
+    assert _ensure_sentence_end(text) == expected
+
+
 # --- _group_consecutive ---
 
 
 def test_group_consecutive_merges_same_speaker() -> None:
     segments = [
-        _seg('SPEAKER_00', 'Hello'),
-        _seg('SPEAKER_00', 'there'),
+        _seg('SPEAKER_00', 'Wechseln'),
+        _seg('SPEAKER_00', 'Okay super.'),
     ]
     result = list(_group_consecutive(segments))
-    assert result == [('SPEAKER_00', 'Hello there')]
+    assert result == [('SPEAKER_00', 'Wechseln. Okay super.')]
 
 
 def test_group_consecutive_splits_on_interleave() -> None:
@@ -152,9 +171,9 @@ def test_group_consecutive_splits_on_interleave() -> None:
     ]
     result = list(_group_consecutive(segments))
     assert result == [
-        ('SPEAKER_00', 'Hello'),
-        ('SPEAKER_01', 'Hi'),
-        ('SPEAKER_00', 'Back again'),
+        ('SPEAKER_00', 'Hello.'),
+        ('SPEAKER_01', 'Hi.'),
+        ('SPEAKER_00', 'Back again.'),
     ]
 
 
@@ -164,4 +183,4 @@ def test_group_consecutive_empty() -> None:
 
 def test_group_consecutive_single() -> None:
     result = list(_group_consecutive([_seg('SPEAKER_00', 'Only one')]))
-    assert result == [('SPEAKER_00', 'Only one')]
+    assert result == [('SPEAKER_00', 'Only one.')]
